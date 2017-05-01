@@ -445,12 +445,20 @@ class VMStorage(VMBase):
             pool = self.conn.storagePoolDefineXML(pool_xml, 0)
             if pool:
                 pool.build(0)
-                pool.create(0)            
+                pool.create(0)    
                 pool.setAutostart(1)
+                pool.refresh()#刷新刚刚添加的存储池，加载存储池里面存在的文件
                 return pool
         except:
             return False
     
+    def refreshStoragePool(self,pool):
+        '''刷新存储池'''
+        try:
+            pool.refresh()
+            return True
+        except:
+            return False
     
     def createVolumes(self,pool,volume_name,volume_capacity,drive=None):
         if drive is None:drive = 'qcow2'
@@ -906,11 +914,11 @@ class VMInstance(VMBase):
 
         
     def delInstanceInterface(self,instance,interName): 
-        '''添加网络设备''' 
+        '''删除网络设备''' 
         interXml = None
         raw_xml = instance.XMLDesc(0)
         domXml = minidom.parseString(raw_xml)
-        for ds in domXml.getElementsByTagName('disk'):
+        for ds in domXml.getElementsByTagName('interface'):
             try:
                 dev = ds.getElementsByTagName('target')[0].getAttribute('dev')
             except:
@@ -924,7 +932,7 @@ class VMInstance(VMBase):
         else:return False  
         
     def delInstanceDisk(self,instance,volPath):
-        '''删除网络设备'''
+        '''删除硬盘'''
         diskXml = None
         raw_xml = instance.XMLDesc(0)
         domXml = minidom.parseString(raw_xml)
@@ -934,7 +942,7 @@ class VMInstance(VMBase):
             except:
                 continue
             if path == volPath:diskXml = ds.toxml()  
-        if  diskXml:
+        if diskXml:
             try:
                 return instance.detachDeviceFlags(diskXml,3)
             except Exception,e:
@@ -1165,8 +1173,71 @@ class VMNetwork(VMBase):
                 mode = 'brct'
             return mode
         else:return False
-    
+        
+    def getInterface(self, name):
+        '''获取网络接口'''
+        try:
+            return self.conn.interfaceLookupByName(name)
+        except:
+            return False
 
+    def getInterfaceInfo(self, name):
+        iface = self.getInterface(name)
+        xml = iface.XMLDesc(0)
+        mac = iface.MACString()
+        itype = vMUtil.get_xml_path(xml, "/interface/@type")
+        ipType = vMUtil.get_xml_path(xml, "/interface/protocol/@family")
+        if ipType == 'ipv4':
+            ipv4 = vMUtil.get_xml_path(xml, "/interface/protocol/ip/@address")
+            mask = vMUtil.get_xml_path(xml, "/interface/protocol/ip/@prefix")
+        else:
+            ipv4 = None
+            mask = None
+        state = iface.isActive()
+        return {'name': name, 'type': itype, 'state': state, 'mac': mac,'ipv4':ipv4,'mask':mask}
+    
+    def defineInterface(self, xml, flag=0):
+        '''定义网络接口'''
+        self.conn.interfaceDefineXML(xml, flag)
+
+    def createBridgeInterface(self, netdev,brName,ipv4_addr,mask,stp,mac,delay=0.01):
+        '''创建网桥类型接口'''
+        print netdev,brName,ipv4_addr,mask,stp
+        xml = """<interface type='bridge' name='{brName}'>
+                    <start mode='onboot'/>""".format( brName=brName)
+        if ipv4_addr and mask:
+            xml += """ <protocol family='ipv4'>
+                            <ip address='{ipv4_addr}' prefix='{mask}'/>
+                        </protocol>""".format(ipv4_addr=ipv4_addr,mask=mask)
+        xml += """<bridge stp='{stp}' delay='{delay}'>
+                        <interface name='{netdev}' type='ethernet'/>
+                        <mac address='{mac}'/>
+                      </bridge>""".format(stp=stp, delay=delay,mac=mac ,netdev=netdev)
+        xml += """</interface>"""
+        self.defineInterface(xml)
+        iface = self.getInterface(brName)
+        iface.create()    
+
+    def stopInterface(self,iface):
+        try:
+            iface.destroy()
+            return True
+        except:
+            return False
+
+    def startInterface(self,iface):
+        try:
+            iface.create()
+            return True
+        except:
+            return False
+
+    def deleteInterface(self,iface):
+        try:
+            iface.undefine()
+            return True
+        except:
+            return False
         
     def createNetwork(self,xml):
         '''创建网络并且设置自启动'''

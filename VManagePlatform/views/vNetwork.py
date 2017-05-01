@@ -50,24 +50,19 @@ def configNetwork(request):
                         if status.get('status') == 'success':
                             if request.POST.get('stp') == 'on':status = OVS.ovsConfStp(brName=request.POST.get('name'))#是否开启stp
                     elif request.POST.get('mode') == 'bridge':
-                        status = BRCTL.brctlAddBr(brName=request.POST.get('name'))
-                        if status.get('status') == 'success':
-                            status = BRCTL.brctlAddIf(brName=request.POST.get('name'), interface=request.POST.get('interface'))
-                        if status.get('status') == 'success':
-                            status = BRCTL.brctlUpBr(brName=request.POST.get('name'))
-                        if status.get('status') == 'success':
-                            if request.POST.get('stp') == 'on':status = BRCTL.brctlBrStp(brName=request.POST.get('name'),mode='on') 
+                        if request.POST.get('stp') == 'on':status = BRCTL.brctlAddBr(iface=request.POST.get('interface'),brName=request.POST.get('name'),stp='on')
+                        else:status = BRCTL.brctlAddBr(iface=request.POST.get('interface'),brName=request.POST.get('name'),stp=None)
                     SSH.close()
                     if  status.get('status') == 'success':                          
                         XML = CreateNetwork(name=request.POST.get('name'),
-                                            bridgeName=request.POST.get('bridgeName'),
+                                            bridgeName=request.POST.get('name'),
                                             mode=request.POST.get('mode'))
                         result = NETWORK.createNetwork(XML)
                         VMS.close()
                     else:
                         VMS.close()
                         return  JsonResponse({"code":500,"msg":"网络创建失败。","data":status.get('stderr')}) 
-                    if result == 0: return  JsonResponse({"code":200,"msg":"网络创建成功。","data":None})   
+                    if isinstance(result,int): return  JsonResponse({"code":200,"msg":"网络创建成功。","data":None})   
                     else:return  JsonResponse({"code":500,"msg":"网络创建失败。","data":None})   
             else:return  JsonResponse({"code":500,"msg":"网络创建失败。","data":None})                                                 
         except Exception,e:
@@ -101,7 +96,7 @@ def handleNetwork(request):
                         if netkName.startswith('ovs'):OVS.ovsDelBr(brName=netkName)
                         elif netkName.startswith('br'):
                             BRCTL.brctlDownBr(brName=netkName)
-                            BRCTL.brctlDelBr(brName=netkName)
+#                             BRCTL.brctlDelBr(brName=netkName)
                         SSH.close()
                     except:
                         pass
